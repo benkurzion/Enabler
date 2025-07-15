@@ -1,0 +1,217 @@
+import numpy as np
+import math
+from tkinter import filedialog
+from PIL import Image
+
+def open_image_file() -> np.array:
+    '''
+    Prompts user for image file and returns either
+    - 3D numpy array with RGB values
+    - None
+    '''
+    file_path = filedialog.askopenfilename(
+        title="Select an Image File",
+        filetypes=[("Image files", "*.png *.jpg *.jpeg *.gif *.bmp *.ico")]
+    )
+
+    if file_path:
+        print(f"Selected image file: {file_path}")
+        try:
+            img = Image.open(file_path)
+            print(f"Image opened: {img.format}, size: {img.size}")
+            pix = np.array(img.getdata()).reshape(img.size[0], img.size[1], 3)
+            return pix
+        except Exception as e:
+            print(f"Error opening image: {e}")
+    else:
+        print("No image file selected.")
+
+    return None
+
+
+def similarity_absolute(p1 : np.ndarray, p2 : np.ndarray) -> int:
+    '''
+    A larger similarity is assigned for similar pixels. 
+    Maximum value = 1.0
+    '''
+    if p1.shape[0] != p2.shape[0]:
+        raise Exception("Something is wrong. Not given an RGB array")
+    if np.linalg.norm(p1-p2) == 0:
+        return 1
+    return 1 / np.linalg.norm(p1-p2)
+
+
+
+class Node:
+    '''
+    A node in a graph network. Each pixel in an image is represented as a node.
+
+    Parameters
+    ----------
+
+    rgb : np.ndarray
+        An array containing the red, green, and blue intensities at this pixel
+
+    i : int
+        The coordinate at which this pixel resides in the image along the vertical
+
+    j : int
+        The coordinate at which this pixel resides in the image along the horizontal
+
+    edges : list
+        A list of all of the outgoing edges from this node
+    '''
+    def __init__(self, rgb : np.ndarray, i : int, j : int, edges : list):
+        self.rgb = rgb
+        self.i = i
+        self.j = j
+        self.edges = edges
+
+
+class Edge:
+    '''
+    A directed edge in a weighted graph network
+
+    Parameters
+    ----------
+
+    node_to : list
+        A list [i,j] denoting the coordinates of sink node
+
+    node_from : list
+        A list [i,j] denoting the coordinates of source node
+
+    weight_override : bool
+        An optional flag indicating that the edge weight is hard coded in as 1
+    '''
+
+    def __init__(self, node_to: list, node_from: list, weight_override: bool = False):
+        self.node_to = node_to
+        self.node_from = node_from
+        if weight_override:
+            self.weight = 1
+        else:
+            self.weight = similarity_absolute(p1=node_to.rgb, p2=node_from.rgb)
+
+class Graph: 
+    '''
+    A parameterized graph for a min-cut algorithm
+
+    Parameters
+    ----------
+
+    img : np.ndarray
+        A 3D array with RGB values representing an image
+
+    depth : int
+        Determines how pixels are connected in the graph. *depth = 1* indicates connections between directly adjacent pixels (cardinal directions & diagonals). 
+        *depth = 2* indicates additional connections to the layer of pixels, 2 hops away from a node.
+
+    '''
+
+    def __init__(self, img : np.ndarray, depth : int):
+        height = img.shape[0]
+        width = img.shape[1]
+        
+        self.img = img
+        self.height = height
+        self.width = width
+        if depth < 1:
+            raise ValueError("Depth must have a non-negative value")
+        else:
+            self.depth = depth
+
+        self.construct_graph()
+    
+    def construct_graph(self):
+        '''
+        The graph is represented as a 2-D array of nodes. Each node contains a list of outgoing edges. 
+        '''
+        self.graph = np.zeros(shape=(self.height + 1, self.width), dtype=Node)
+        for i in range(self.height - 1):
+            for j in range(self.width):
+                self.graph[i][j] = Node(rgb=self.img[i][j], i=i, j=j, edges=None)
+    
+        # Now all of the nodes are set. Connect with edges
+        for i in range(self.height - 1):
+            for j in range(self.width):
+                self.graph[i][j].edges = self.get_edges(i, j)
+
+        # Add in the source and sink nodes
+        # Source is connected to top left
+        # Sink is connected to bottom right
+        source = Node(rgb=None, i=self.height, j=0, edges=[Edge(node_from=[self.height, 0], node_to=[0,0], weight_override=True)])
+        sink = Node(rgb=None, i=self.height, j=1, edges=[Edge(node_from=[self.height, 1], node_to=[self.height-1, self.width-1], weight_override=True)])
+        graph[self.height][0] = source
+        graph[self.height][1] = sink
+
+    def get_edges(self, i, j) -> list:
+        '''
+        Returns all of the edges from a node
+        '''
+        edges = []
+        for d_j in range (self.depth + 1):
+            if j + d_j < self.width:
+                for d_i in range (1, self.depth + 1):
+                    if i + d_i < self.height:
+                        edges.append(Edge(node_from=[i, j], node_to=[i + d_i, j + d_j]))
+                    if i - d_i >= 0:
+                        edges.append(Edge(node_from=[i, j], node_to=[i - d_i, j + d_j]))
+                if d_j > 0:
+                    edges.append(Edge(node_from=[i, j], node_to=[i, j + d_j]))
+            if j - d_j >= 0 and d_j != 0:
+                for d_i in range (1, self.depth + 1):
+                    if i + d_i < self.height:
+                        edges.append(Edge(node_from=[i, j], node_to=[i + d_i, j - d_j]))
+                    if i - d_i >= 0:
+                        edges.append(Edge(node_from=[i, j], node_to=[i - d_i, j - d_j]))
+                if d_j > 0: 
+                    edges.append(Edge(node_from=[i, j], node_to=[i, j - d_j]))
+        return edges
+
+
+
+def ford_fulkerson_algo(graph : Graph) :
+    '''
+    Performs the min_cut / max_flow algorithm on the graph to separate distinct objects
+    '''
+    source = graph[graph.height][0]
+    # Continue finding paths from source to sink and update the capacities of edges used
+    flag = True
+    while flag:
+        flag = False
+        parent = bfs(graph=graph, source=source)
+        if parent:
+            flag = True
+            # Find the maximum flow possible to push through this path
+            max_flow = np.inf
+
+
+
+
+
+def bfs(graph : Graph, source : Node) -> list:
+    '''
+    Performs a breadth first search of the graph from source node *s* to sink node *t*. Returns parent array if there is a valid path.
+    '''
+    queue = [[source.i, source.j]]
+    visited = np.zeros(shape=(graph.height + 1, graph.width), dtype=bool)
+    parent = np.zeros(shape=(graph.height + 1, graph.width))
+    while queue:
+        node = queue.pop()
+        node = graph.graph[node[0]][node[1]]
+        for edge in node.edges:
+            neighbor = edge.node_to
+            # Check if neighbor is sink node
+            if neighbor.i == graph.height and neighbor.j == 1:
+                parent[neighbor.i][neighbor.j] = [node.i, node.j]
+                return parent
+            if not visited[neighbor.i][neighbor.j] and edge.weight > 0:
+                visited[neighbor.i][neighbor.j] = True
+                parent[neighbor.i][neighbor.j] = [node.i, node.j]
+                queue.append([neighbor.i, neighbor.j])
+    return None
+
+img_rgb = open_image_file()
+graph = Graph(img=img_rgb, depth=1)
+print(";")
