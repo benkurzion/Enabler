@@ -81,17 +81,20 @@ class Edge:
     node_from : list
         A list [i,j] denoting the coordinates of source node
 
+    similarity : int
+        A similarity measure between *node_to* and *node_from*
+
     weight_override : bool
         An optional flag indicating that the edge weight is hard coded in as 1
     '''
 
-    def __init__(self, node_to: list, node_from: list, weight_override: bool = False):
+    def __init__(self, node_to: list, node_from: list, similarity : int = 0, weight_override: bool = False):
         self.node_to = node_to
         self.node_from = node_from
         if weight_override:
-            self.weight = 1
+            self.weight = np.inf # source and sink should have infinite capacity
         else:
-            self.weight = similarity_absolute(p1=node_to.rgb, p2=node_from.rgb)
+            self.weight = similarity
 
 class Graph: 
     '''
@@ -128,12 +131,12 @@ class Graph:
         The graph is represented as a 2-D array of nodes. Each node contains a list of outgoing edges. 
         '''
         self.graph = np.zeros(shape=(self.height + 1, self.width), dtype=Node)
-        for i in range(self.height - 1):
+        for i in range(self.height):
             for j in range(self.width):
                 self.graph[i][j] = Node(rgb=self.img[i][j], i=i, j=j, edges=None)
     
         # Now all of the nodes are set. Connect with edges
-        for i in range(self.height - 1):
+        for i in range(self.height):
             for j in range(self.width):
                 self.graph[i][j].edges = self.get_edges(i, j)
 
@@ -141,9 +144,10 @@ class Graph:
         # Source is connected to top left
         # Sink is connected to bottom right
         source = Node(rgb=None, i=self.height, j=0, edges=[Edge(node_from=[self.height, 0], node_to=[0,0], weight_override=True)])
-        sink = Node(rgb=None, i=self.height, j=1, edges=[Edge(node_from=[self.height, 1], node_to=[self.height-1, self.width-1], weight_override=True)])
-        graph[self.height][0] = source
-        graph[self.height][1] = sink
+        sink = Node(rgb=None, i=self.height, j=1, edges=None)
+        self.graph[self.height - 1][self.width - 1].edges.append(Edge(node_from=[self.height-1, self.width-1], node_to=[self.height, 1], weight_override=True))
+        self.graph[self.height][0] = source
+        self.graph[self.height][1] = sink
 
     def get_edges(self, i, j) -> list:
         '''
@@ -154,19 +158,19 @@ class Graph:
             if j + d_j < self.width:
                 for d_i in range (1, self.depth + 1):
                     if i + d_i < self.height:
-                        edges.append(Edge(node_from=[i, j], node_to=[i + d_i, j + d_j]))
+                        edges.append(Edge(node_from=[i, j], node_to=[i + d_i, j + d_j], similarity=similarity_absolute(self.graph[i][j].rgb, self.graph[i + d_i][j + d_j].rgb)))
                     if i - d_i >= 0:
-                        edges.append(Edge(node_from=[i, j], node_to=[i - d_i, j + d_j]))
+                        edges.append(Edge(node_from=[i, j], node_to=[i - d_i, j + d_j], similarity=similarity_absolute(self.graph[i][j].rgb, self.graph[i - d_i][j + d_j].rgb)))
                 if d_j > 0:
-                    edges.append(Edge(node_from=[i, j], node_to=[i, j + d_j]))
+                    edges.append(Edge(node_from=[i, j], node_to=[i, j + d_j], similarity=similarity_absolute(self.graph[i][j].rgb, self.graph[i][j + d_j].rgb)))
             if j - d_j >= 0 and d_j != 0:
                 for d_i in range (1, self.depth + 1):
                     if i + d_i < self.height:
-                        edges.append(Edge(node_from=[i, j], node_to=[i + d_i, j - d_j]))
+                        edges.append(Edge(node_from=[i, j], node_to=[i + d_i, j - d_j], similarity=similarity_absolute(self.graph[i][j].rgb, self.graph[i + d_i][j - d_j].rgb)))
                     if i - d_i >= 0:
-                        edges.append(Edge(node_from=[i, j], node_to=[i - d_i, j - d_j]))
+                        edges.append(Edge(node_from=[i, j], node_to=[i - d_i, j - d_j], similarity=similarity_absolute(self.graph[i][j].rgb, self.graph[i - d_i][j - d_j].rgb)))
                 if d_j > 0: 
-                    edges.append(Edge(node_from=[i, j], node_to=[i, j - d_j]))
+                    edges.append(Edge(node_from=[i, j], node_to=[i, j - d_j], similarity=similarity_absolute(self.graph[i][j].rgb, self.graph[i][j - d_j].rgb)))
         return edges
 
 
@@ -175,13 +179,16 @@ def ford_fulkerson_algo(graph : Graph) :
     '''
     Performs the min_cut / max_flow algorithm on the graph to separate distinct objects
     '''
-    source = graph[graph.height][0]
+
+    source = graph.graph[graph.height][0]
     # Continue finding paths from source to sink and update the capacities of edges used
     flag = True
     while flag:
         flag = False
         parent = bfs(graph=graph, source=source)
-        if parent:
+        if parent is None:
+            print("No more paths. Ford Fulkerson terminated")
+        else:
             flag = True
             # Find the maximum flow possible to push through this path
             max_flow = np.inf
@@ -196,22 +203,22 @@ def bfs(graph : Graph, source : Node) -> list:
     '''
     queue = [[source.i, source.j]]
     visited = np.zeros(shape=(graph.height + 1, graph.width), dtype=bool)
-    parent = np.zeros(shape=(graph.height + 1, graph.width))
+    parent = np.zeros(shape=(graph.height + 1, graph.width), dtype=list)
     while queue:
         node = queue.pop()
         node = graph.graph[node[0]][node[1]]
         for edge in node.edges:
             neighbor = edge.node_to
             # Check if neighbor is sink node
-            if neighbor.i == graph.height and neighbor.j == 1:
-                parent[neighbor.i][neighbor.j] = [node.i, node.j]
+            if neighbor[0] == graph.height and neighbor[1] == 1:
+                parent[neighbor[0]][neighbor[1]] = [node.i, node.j]
                 return parent
-            if not visited[neighbor.i][neighbor.j] and edge.weight > 0:
-                visited[neighbor.i][neighbor.j] = True
-                parent[neighbor.i][neighbor.j] = [node.i, node.j]
-                queue.append([neighbor.i, neighbor.j])
+            if not visited[neighbor[0]][neighbor[1]] and edge.weight > 0:
+                visited[neighbor[0]][neighbor[1]] = True
+                parent[neighbor[0]][neighbor[1]] = [node.i, node.j, edge]
+                queue.append([neighbor[0], neighbor[1]])
     return None
 
 img_rgb = open_image_file()
 graph = Graph(img=img_rgb, depth=1)
-print(";")
+ford_fulkerson_algo(graph=graph)
