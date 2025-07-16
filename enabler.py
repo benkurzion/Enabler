@@ -2,6 +2,8 @@ import numpy as np
 import math
 from tkinter import filedialog
 from PIL import Image
+import matplotlib.pyplot as plt
+
 
 def open_image_file() -> np.array:
     '''
@@ -192,7 +194,38 @@ def ford_fulkerson_algo(graph : Graph) :
             flag = True
             # Find the maximum flow possible to push through this path
             max_flow = np.inf
+            path_node = [graph.height, 1]
+            while path_node[0] != graph.height or path_node[1] != 0:
+                edge = parent[path_node[0]][path_node[1]][2]
+                max_flow = min(max_flow, edge.weight)
+                path_node = [parent[path_node[0]][path_node[1]][0], parent[path_node[0]][path_node[1]][1]]
+            # Update the edge weights along this path with the max_flow
+            path_node = [graph.height, 1]
+            while path_node[0] != graph.height or path_node[1] != 0:
+                edge = parent[path_node[0]][path_node[1]][2]
+                edge.weight = edge.weight - max_flow
+                path_node = [parent[path_node[0]][path_node[1]][0], parent[path_node[0]][path_node[1]][1]]
 
+    resulting_img = np.zeros(shape=(graph.height, graph.width, 3))
+    queue = [[0, 0]]
+    visited = np.zeros(shape=(graph.height, graph.width), dtype=bool)
+    while queue:
+        node = queue.pop()
+        node = graph.graph[node[0]][node[1]]
+        for edge in node.edges:
+            neighbor = edge.node_to
+            # Check if neighbor is sink node
+            if neighbor[0] == graph.height and neighbor[1] == 1:
+                pass
+            elif not visited[neighbor[0]][neighbor[1]] and edge.weight > 0:
+                visited[neighbor[0]][neighbor[1]] = True
+                queue.append([neighbor[0], neighbor[1]])
+                neighbor_node = graph.graph[neighbor[0]][neighbor[1]]
+                resulting_img[neighbor[0]][neighbor[1]][:] = neighbor_node.rgb
+    
+    # Display the image
+    img = Image.fromarray(resulting_img.astype(np.uint8))
+    img.show()
 
 
 
@@ -211,7 +244,7 @@ def bfs(graph : Graph, source : Node) -> list:
             neighbor = edge.node_to
             # Check if neighbor is sink node
             if neighbor[0] == graph.height and neighbor[1] == 1:
-                parent[neighbor[0]][neighbor[1]] = [node.i, node.j]
+                parent[neighbor[0]][neighbor[1]] = [node.i, node.j, edge]
                 return parent
             if not visited[neighbor[0]][neighbor[1]] and edge.weight > 0:
                 visited[neighbor[0]][neighbor[1]] = True
