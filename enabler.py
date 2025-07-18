@@ -33,7 +33,7 @@ def open_image_file() -> np.array:
     return None
 
 
-def similarity_absolute(p1 : np.ndarray, p2 : np.ndarray) -> int:
+def similarity_absolute(p1 : np.ndarray, p2 : np.ndarray) -> float:
     '''
     A larger similarity is assigned for similar pixels. 
     Maximum value = 1.0
