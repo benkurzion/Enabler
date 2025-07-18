@@ -21,8 +21,10 @@ def open_image_file() -> np.array:
         try:
             img = Image.open(file_path)
             print(f"Image opened: {img.format}, size: {img.size}")
-            pix = np.array(img.getdata()).reshape(img.size[0], img.size[1], 3)
-            return pix
+            new_size_scaled = (128, 128)
+            img_downsized_scaled = img.resize(new_size_scaled)
+            pix_downsized_scaled = np.array(img_downsized_scaled.getdata()).reshape(img_downsized_scaled.size[0], img_downsized_scaled.size[1], 3)
+            return pix_downsized_scaled
         except Exception as e:
             print(f"Error opening image: {e}")
     else:
@@ -224,8 +226,9 @@ def ford_fulkerson_algo(graph : Graph) :
                 resulting_img[neighbor[0]][neighbor[1]][:] = neighbor_node.rgb
     
     # Display the image
-    img = Image.fromarray(resulting_img.astype(np.uint8))
-    img.show()
+    plt.imshow(resulting_img.astype(np.uint8))
+    plt.axis('off')
+    plt.show()
 
 
 
@@ -252,6 +255,9 @@ def bfs(graph : Graph, source : Node) -> list:
                 queue.append([neighbor[0], neighbor[1]])
     return None
 
+
+
+# Run
 img_rgb = open_image_file()
 graph = Graph(img=img_rgb, depth=1)
 ford_fulkerson_algo(graph=graph)
